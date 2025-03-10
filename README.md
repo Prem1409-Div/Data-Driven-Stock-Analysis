@@ -34,7 +34,7 @@ Data-Driven Stock Analysis
 │   ├── analysis.py           # Runs all functions sequentially
 │   ├── extract_data.py       # Extracts stock data from YAML files
 │   ├── load_to_sql.py        # Loads processed data into MySQL
-└── run_pipeline.py   # This script
+    ├── run_pipeline.py       # This script all python file at once execution  
 │   ├── streamlit_app.py      # Displays stock analysis results in Streamlit
 ```
 
