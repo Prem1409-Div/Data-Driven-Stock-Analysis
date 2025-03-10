@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import altair as alt
 from sqlalchemy import create_engine, text
 
 # Database connection setup
@@ -22,28 +23,28 @@ def get_data_from_sql(query, params=None):
 st.title("📈 Stock Market Analysis Dashboard")
 
 # Main page sections
-tab1, tab2, tab3 = st.tabs(["📊 Market Overview", "🔥 Heatmap Analysis", "📈 Monthly Performance"])
+tab1, tab2, tab3, tab4 = st.tabs(["📊 Market Overview", "🔍 Sector Breakdown", "🔥 Heatmap Analysis", "📈 Monthly Performance"])
 
 with tab1:  # Market Overview Tab
     # Fetch data from MySQL
     query_top_green_sectors = """
-        SELECT sector, `Average_Yearly_Return_(%)` 
-        FROM sector_wise_yearly_return 
-        ORDER BY `Average_Yearly_Return_(%)` DESC 
-        LIMIT 10
-    """
+    SELECT sector, `Average_Yearly_Return_(%)`
+    FROM sector_wise_yearly_return
+    ORDER BY `Average_Yearly_Return_(%)` DESC
+    LIMIT 10
+"""
     query_top_loss_sectors = """
-        SELECT sector, `Average_Yearly_Return_(%)` 
-        FROM sector_wise_yearly_return 
-        ORDER BY `Average_Yearly_Return_(%)` ASC 
-        LIMIT 10
-    """
+    SELECT sector, `Average_Yearly_Return_(%)`
+    FROM sector_wise_yearly_return
+    ORDER BY `Average_Yearly_Return_(%)` ASC
+    LIMIT 10
+"""
     query_market_summary = """
-        SELECT 
-            SUM(CASE WHEN `Average_Yearly_Return_(%)` > 0 THEN 1 ELSE 0 END) AS Green_Sectors,
-            SUM(CASE WHEN `Average_Yearly_Return_(%)` <= 0 THEN 1 ELSE 0 END) AS Red_Sectors
-        FROM sector_wise_yearly_return
-    """
+    SELECT
+        SUM(CASE WHEN `Average_Yearly_Return_(%)` > 0 THEN 1 ELSE 0 END) AS Green_Sectors,
+        SUM(CASE WHEN `Average_Yearly_Return_(%)` <= 0 THEN 1 ELSE 0 END) AS Red_Sectors
+    FROM sector_wise_yearly_return
+"""
 
     top_green_sectors = get_data_from_sql(query_top_green_sectors)
     top_loss_sectors = get_data_from_sql(query_top_loss_sectors)
@@ -51,7 +52,7 @@ with tab1:  # Market Overview Tab
 
     # Display DataFrames
     col1, col2 = st.columns(2)
-    
+   
     with col1:
         st.subheader("🏆 Top 10 Performing Sectors")
         st.dataframe(top_green_sectors.style.format({'Average_Yearly_Return_(%)': '{:.2f}%'}))
@@ -63,27 +64,38 @@ with tab1:  # Market Overview Tab
     # Market Summary
     st.subheader("📈 Market Summary")
     summary_col1, summary_col2 = st.columns(2)
-    
+   
     with summary_col1:
         st.metric(label="Green Sectors", value=market_summary['Green_Sectors'][0])
-        
+       
     with summary_col2:
         st.metric(label="Red Sectors", value=market_summary['Red_Sectors'][0])
 
     # Visualization: Volatility Analysis
     st.subheader("📉 Volatility Analysis")
     query_volatility = """
-        SELECT Ticker, `Yearly_Volatility` 
-        FROM volatility_analysis 
-        ORDER BY `Yearly_Volatility` DESC 
+        SELECT Ticker, Yearly_Volatility
+        FROM volatility_analysis
+        ORDER BY Yearly_Volatility DESC
         LIMIT 10
     """
     volatility_data = get_data_from_sql(query_volatility)
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    sns.barplot(y=volatility_data["Ticker"], 
-                x=volatility_data["Yearly_Volatility"], 
-                palette="coolwarm", ax=ax)
+    bars = sns.barplot(y=volatility_data["Ticker"],
+                      x=volatility_data["Yearly_Volatility"],
+                      palette="coolwarm", ax=ax)
+    
+    # Add value labels
+    max_volatility = volatility_data["Yearly_Volatility"].max()
+    for bar in bars.patches:
+        width = bar.get_width()
+        label_x = width - (max_volatility * 0.01)  # Adjust position based on max value
+        label_y = bar.get_y() + bar.get_height()/2
+        ax.text(label_x, label_y, 
+               f'{width:.2f}',
+               va='center', ha='right', color='white')
+    
     ax.set_xlabel("Volatility Index", fontsize=12)
     ax.set_ylabel("Stock Ticker", fontsize=12)
     ax.set_title("Top 10 Most Volatile Stocks", fontsize=14)
@@ -95,70 +107,130 @@ with tab1:  # Market Overview Tab
     sector_data = get_data_from_sql(query_sector)
 
     fig, ax = plt.subplots(figsize=(10, 8))
-    sns.barplot(y=sector_data["sector"], 
-                x=sector_data["Average_Yearly_Return_(%)"], 
-                palette="viridis", ax=ax)
+    bars = sns.barplot(y=sector_data["sector"],
+                      x=sector_data["Average_Yearly_Return_(%)"],
+                      palette="viridis", ax=ax)
+    
+    # Add value labels with dynamic positioning
+    max_return = sector_data["Average_Yearly_Return_(%)"].abs().max()
+    for bar in bars.patches:
+        width = bar.get_width()
+        offset = max_return * 0.02  # 2% of max value for padding
+        label_x = width - offset if width > 0 else width + offset
+        label_y = bar.get_y() + bar.get_height()/2
+        color = 'white' if width > 0 else 'black'
+        
+        ax.text(label_x, label_y, 
+               f'{width:.2f}%',
+               va='center', 
+               ha='right' if width > 0 else 'left', 
+               color=color)
+    
     ax.set_xlabel("Average Return (%)", fontsize=12)
     ax.set_ylabel("Sector", fontsize=12)
     ax.set_title("Yearly Returns by Sector", fontsize=14)
     st.pyplot(fig)
 
-with tab2:  # Heatmap Tab
+with tab2:  # Sector Breakdown
+    st.subheader("🔍 Sector Breakdown")
+
+    # Fetch sector breakdown data
+    break_down_query = "SELECT Ticker, sector, `Average_Yearly_Return_(%)` FROM sector_ticker_wise_yearly_return"
+    break_down_sector_data = get_data_from_sql(break_down_query)
+
+    if not break_down_sector_data.empty:
+        col1, col2 = st.columns([1, 3])
+
+        with col1:
+            sectors = ["All"] + sorted(break_down_sector_data["sector"].dropna().unique().tolist())
+            selected_sector = st.selectbox("Select Sector", sectors)
+
+        filtered_data = break_down_sector_data if selected_sector == "All" else break_down_sector_data[break_down_sector_data["sector"] == selected_sector]
+
+        with col2:
+            if not filtered_data.empty:
+                chart = alt.Chart(filtered_data).mark_bar().encode(
+                    x=alt.X("Average_Yearly_Return_(%):Q", title="Average Yearly Return (%)"),
+                    y=alt.Y("Ticker:N", sort="-x", title="Ticker"),
+                    tooltip=["Ticker", "Average_Yearly_Return_(%)"]
+                ).properties(
+                    title="Average Yearly Return (%) by Ticker",
+                    width=600
+                )
+                st.altair_chart(chart, use_container_width=True)
+            else:
+                st.warning("No data available for the selected sector.")
+
+with tab3:  # Heatmap Tab
     st.subheader("📊 Stock Correlation Matrix")
-    
+   
     query_correlation = "SELECT Stock_1, Stock_2, Correlation FROM stock_correlation_long"
     correlation_data = get_data_from_sql(query_correlation)
 
     if not correlation_data.empty:
-        pivot_table = correlation_data.pivot(index="Stock_1", 
-                                           columns="Stock_2", 
+        pivot_table = correlation_data.pivot(index="Stock_1",
+                                           columns="Stock_2",
                                            values="Correlation")
-        
+       
         fig, ax = plt.subplots(figsize=(24, 20))
-        sns.heatmap(pivot_table, cmap="coolwarm", 
-                  linewidths=0.1, ax=ax, 
-                  cbar_kws={'shrink': 0.8})
-        ax.set_title("Stock Price Correlation Heatmap", fontsize=16)
-        plt.xticks(fontsize=8, rotation=90)
-        plt.yticks(fontsize=8)
+        
+        # Enhanced heatmap with annotations and better coloring
+        sns.heatmap(
+            pivot_table,
+            cmap="coolwarm",
+            linewidths=0.1,
+            ax=ax,
+            annot=True,  # Show values
+            annot_kws={"size": 8},  # Annotation font size
+            fmt=".2f",  # Format to 2 decimal places
+            cbar_kws={'shrink': 0.8, 'label': 'Correlation Scale'},
+            vmin=-1,  # Fixed scale for better color interpretation
+            vmax=1,
+            center=0  # Neutral point at zero correlation
+        )
+        
+        # Improved labels and titles
+        ax.set_title("Stock Price Correlation Heatmap", fontsize=18, pad=20)
+        ax.set_xlabel("Stock Tickers", fontsize=14)
+        ax.set_ylabel("Stock Tickers", fontsize=14)
+        
+        # Rotate tick labels for better readability
+        plt.xticks(
+            rotation=45,
+            horizontalalignment='right',
+            fontsize=10
+        )
+        plt.yticks(fontsize=10)
+        
+        # Add grid lines for better cell distinction
+        ax.grid(False)
+        for _, spine in ax.spines.items():
+            spine.set_visible(True)
+            spine.set_color('black')
+            
         st.pyplot(fig)
     else:
         st.warning("No correlation data available")
 
-with tab3:  # Monthly Performance Tab
+with tab4:  # Monthly Performance Tab
     st.subheader("📆 Monthly Stock Performance Analysis")
-    
-    # with st.expander("🔍 View Raw Data Structure", expanded=False):
-    #     st.markdown("**Database Schema:**")
-    #     st.code("""
-    #     Table: top_gainers_losers_monthly
-    #     Columns:
-    #     - month (text): Date in YYYY-MM format
-    #     - monthly_return (float): Return percentage
-    #     - ticker (text): Stock ticker symbols
-    #     - category (text): 'Gainer' or 'Loser'
-    #     """)
-        
-    #     raw_data = get_data_from_sql("SELECT * FROM top_gainers_losers_monthly LIMIT 5")
-    #     st.write("Sample Data Preview:", raw_data)
-
+   
     query_gainers_losers = """
-        SELECT 
+        SELECT
             month,
             ticker,
             monthly_return,
             TRIM(LOWER(category)) AS clean_category
         FROM top_gainers_losers_monthly
     """
-    
+   
     try:
         gainers_losers_data = get_data_from_sql(query_gainers_losers)
-        
+       
         if not gainers_losers_data.empty:
-            # Convert YYYY-MM to datetime and extract year-month
             try:
                 gainers_losers_data['date'] = pd.to_datetime(
-                    gainers_losers_data['month'], 
+                    gainers_losers_data['month'],
                     format='%Y-%m'
                 )
                 gainers_losers_data['month_year'] = gainers_losers_data['date'].dt.strftime('%B %Y')
@@ -166,10 +238,8 @@ with tab3:  # Monthly Performance Tab
                 gainers_losers_data['year'] = gainers_losers_data['date'].dt.year
             except Exception as date_error:
                 st.error(f"Date parsing error: {str(date_error)}")
-                st.write("Ensure month column contains valid YYYY-MM format")
                 st.stop()
 
-            # Sort by date and get unique month-year combinations
             gainers_losers_data = gainers_losers_data.sort_values('date')
             unique_months = gainers_losers_data['month_year'].unique()
 
@@ -179,30 +249,52 @@ with tab3:  # Monthly Performance Tab
                         (gainers_losers_data["month_year"] == month_year) &
                         (gainers_losers_data["clean_category"].isin(['gainer', 'loser']))
                     ]
-                    
+                   
                     if not month_data.empty:
                         col1, col2 = st.columns(2)
-                        
+                       
                         with col1:
                             st.subheader(f"🏆 Top Gainers - {month_year}")
                             gainers = month_data[month_data["clean_category"] == 'gainer'].head(5)
                             if not gainers.empty:
                                 fig, ax = plt.subplots(figsize=(10, 4))
-                                sns.barplot(x="monthly_return", y="ticker",
-                                          data=gainers, palette="Greens_d")
+                                bars = sns.barplot(x="monthly_return", y="ticker",
+                                                 data=gainers, palette="Greens_d")
+                                
+                                # Add value labels
+                                max_return = gainers["monthly_return"].max()
+                                for bar in bars.patches:
+                                    width = bar.get_width()
+                                    label_x = width - (max_return * 0.03)
+                                    label_y = bar.get_y() + bar.get_height()/2
+                                    bars.text(label_x, label_y,
+                                            f'{width:.2f}%',
+                                            va='center', ha='right', color='white')
+                                
                                 ax.set_xlabel("Monthly Return (%)")
                                 ax.set_ylabel("Ticker")
                                 st.pyplot(fig)
                             else:
                                 st.warning(f"No gainers found for {month_year}")
-                        
+                       
                         with col2:
                             st.subheader(f"📉 Top Losers - {month_year}")
                             losers = month_data[month_data["clean_category"] == 'loser'].head(5)
                             if not losers.empty:
                                 fig, ax = plt.subplots(figsize=(10, 4))
-                                sns.barplot(x="monthly_return", y="ticker",
-                                          data=losers, palette="Reds_d")
+                                bars = sns.barplot(x="monthly_return", y="ticker",
+                                                 data=losers, palette="Reds_d")
+                                
+                                # Add value labels
+                                min_return = losers["monthly_return"].min()
+                                for bar in bars.patches:
+                                    width = bar.get_width()
+                                    label_x = width + (abs(min_return) * 0.03)
+                                    label_y = bar.get_y() + bar.get_height()/2
+                                    bars.text(label_x, label_y,
+                                            f'{width:.2f}%',
+                                            va='center', ha='left', color='white')
+                                
                                 ax.set_xlabel("Monthly Return (%)")
                                 ax.set_ylabel("")
                                 st.pyplot(fig)
@@ -210,22 +302,9 @@ with tab3:  # Monthly Performance Tab
                                 st.warning(f"No losers found for {month_year}")
                     else:
                         st.warning(f"No valid records found for {month_year}")
-            
-            # Show missing months from current year
-            current_year = pd.Timestamp.now().year
-            all_months = [pd.Timestamp(f'{current_year}-{m}-1').strftime('%B %Y') 
-                         for m in range(1, 13)]
-            missing_months = [m for m in all_months if m not in unique_months]
-            
-            if missing_months:
-                st.info(f"Months with no data in {current_year}: {', '.join(missing_months)}")
 
         else:
             st.warning("No monthly performance data found in database")
 
     except Exception as e:
         st.error(f"Database Error: {str(e)}")
-        st.markdown("**Common Solutions:**")
-        st.write("1. Verify table contains data with valid YYYY-MM format")
-        st.write("2. Check category values are either 'Gainer' or 'Loser'")
-        st.write("3. Ensure database connection is active")
