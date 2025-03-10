@@ -77,6 +77,25 @@ def calculate_sector_average_yearly_return(cumulative_df):
     sector_avg_return.to_csv(output_path, index=False)
     print(f"📊 Sector-wise yearly return analysis saved: {output_path}")
 
+def calculate_sector_ticker_average_yearly_return(cumulative_df):
+    """Calculate sector-wise and ticker-wise average yearly return."""
+    sector_data = pd.read_csv(sector_file)
+    sector_data["Symbol"] = sector_data["Symbol"].apply(lambda x: x.split(": ")[-1] if ": " in str(x) else x)
+    
+    cumulative_df["Ticker"] = cumulative_df["Ticker"].str.strip().str.upper()
+    sector_data["Symbol"] = sector_data["Symbol"].str.strip().str.upper()
+    
+    merged_df = cumulative_df.merge(sector_data, left_on="Ticker", right_on="Symbol", how="left")
+    
+    ticker_avg_return = merged_df.groupby(["sector", "Ticker"])["Cumulative Return"].mean().reset_index()
+    
+    ticker_avg_return.rename(columns={"Cumulative Return": "Average Yearly Return (%)"}, inplace=True)
+    
+    output_path = os.path.join(output_dir, "Sector_Ticker_Wise_Yearly_Return.csv")
+    ticker_avg_return.to_csv(output_path, index=False)
+    print(f"📊 Sector & Ticker-wise yearly return analysis saved: {output_path}")  
+ 
+
 def calculate_correlation(stock_data):
     """Calculate stock correlation matrix."""
     df = pd.DataFrame(stock_data)
@@ -88,6 +107,8 @@ def calculate_correlation(stock_data):
     output_path = os.path.join(output_dir, "Stock_Correlation_Long.csv")
     correlation_long.to_csv(output_path, index=False)
     print(f"📊 Correlation matrix saved: {output_path}")
+
+    
 
 def calculate_monthly_gainers_losers(stock_data):
     """Calculate top 5 gainers and losers per month."""
@@ -137,6 +158,7 @@ def main():
     calculate_volatility(stock_data)
     cumulative_df = calculate_cumulative_return(stock_data)
     calculate_sector_average_yearly_return(cumulative_df)
+    calculate_sector_ticker_average_yearly_return(cumulative_df)
     
     stock_close_data = load_stock_data(input_dir, only_close_prices=True)
     calculate_correlation(stock_close_data)
