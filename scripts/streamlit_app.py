@@ -27,49 +27,121 @@ tab1, tab2, tab3, tab4 = st.tabs(["📊 Market Overview", "🔍 Sector Breakdown
 
 with tab1:  # Market Overview Tab
     # Fetch data from MySQL
-    query_top_green_sectors = """
-    SELECT sector, `Average_Yearly_Return_(%)`
-    FROM sector_wise_yearly_return
-    ORDER BY `Average_Yearly_Return_(%)` DESC
-    LIMIT 10
-"""
-    query_top_loss_sectors = """
-    SELECT sector, `Average_Yearly_Return_(%)`
-    FROM sector_wise_yearly_return
-    ORDER BY `Average_Yearly_Return_(%)` ASC
-    LIMIT 10
-"""
-    query_market_summary = """
-    SELECT
-        SUM(CASE WHEN `Average_Yearly_Return_(%)` > 0 THEN 1 ELSE 0 END) AS Green_Sectors,
-        SUM(CASE WHEN `Average_Yearly_Return_(%)` <= 0 THEN 1 ELSE 0 END) AS Red_Sectors
-    FROM sector_wise_yearly_return
-"""
+# 1. Green vs Red Stocks
 
-    top_green_sectors = get_data_from_sql(query_top_green_sectors)
-    top_loss_sectors = get_data_from_sql(query_top_loss_sectors)
-    market_summary = get_data_from_sql(query_market_summary)
+    green_red_query = """
+    SELECT 
+        SUM(CASE WHEN latest_data.`close` > latest_data.`open` THEN 1 ELSE 0 END) AS Green_Stocks,
+        SUM(CASE WHEN latest_data.`close` <= latest_data.`open` THEN 1 ELSE 0 END) AS Red_Stocks
+    FROM (
+        SELECT a.Ticker, a.`open`, a.`close`
+        FROM nifty_50_combined a
+        INNER JOIN (
+            SELECT Ticker, MAX(date) AS max_date
+            FROM nifty_50_combined
+            GROUP BY Ticker
+        ) b ON a.Ticker = b.Ticker AND a.date = b.max_date
+    ) latest_data
+"""
+    green_red = get_data_from_sql(green_red_query)
 
-    # Display DataFrames
-    col1, col2 = st.columns(2)
+# 2. Average Price & Volume per Stock (All Time)
+    avg_per_stock_query = """
+    SELECT 
+        Ticker,
+        AVG(`close`) AS Avg_Price,
+        AVG(`volume`) AS Avg_Volume
+    FROM nifty_50_combined
+    GROUP BY Ticker
+    ORDER BY Ticker
+""" 
+    avg_per_stock = get_data_from_sql(avg_per_stock_query)
+
+    # # Display DataFrames
+    # col1, col2 = st.columns(2)
    
-    with col1:
-        st.subheader("🏆 Top 10 Performing Sectors")
-        st.dataframe(top_green_sectors.style.format({'Average_Yearly_Return_(%)': '{:.2f}%'}))
+    # with col1:
+    #     st.subheader("🏆 Top 10 Performing Sectors")
+    #     st.dataframe(top_green_sectors.style.format({'Average_Yearly_Return_(%)': '{:.2f}%'}))
 
-    with col2:
-        st.subheader("📉 Top 10 Underperforming Sectors")
-        st.dataframe(top_loss_sectors.style.format({'Average_Yearly_Return_(%)': '{:.2f}%'}))
+    # with col2:
+    #     st.subheader("📉 Top 10 Underperforming Sectors")
+    #     st.dataframe(top_loss_sectors.style.format({'Average_Yearly_Return_(%)': '{:.2f}%'}))
 
     # Market Summary
     st.subheader("📈 Market Summary")
-    summary_col1, summary_col2 = st.columns(2)
-   
-    with summary_col1:
-        st.metric(label="Green Sectors", value=market_summary['Green_Sectors'][0])
-       
-    with summary_col2:
-        st.metric(label="Red Sectors", value=market_summary['Red_Sectors'][0])
+    # Create columns for better layout
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.metric("🟢 Green Stocks (Today)", green_red['Green_Stocks'][0])
+
+
+    with col2:
+        st.metric("🔴 Red Stocks (Today)", green_red['Red_Stocks'][0])
+
+
+    # Display Average Table
+    st.subheader("📊Averages per Stock")
+    st.dataframe(
+        avg_per_stock.style.format({
+            'Avg_Price': '₹{:.2f}',
+            'Avg_Volume': '{:,.0f}'
+        }),
+        use_container_width=True,
+        height=600
+    ) 
+
+    # Performance Leaders Section
+    st.subheader("📈 Stock Performance Leaders")
+    col_top, col_bottom = st.columns(2)
+
+    # Top 10 Green Stocks
+    with col_top:
+        top_green_query = """
+            SELECT Ticker, `Average_Yearly_Return_(%)` 
+            FROM sector_ticker_wise_yearly_return
+            ORDER BY `Average_Yearly_Return_(%)` DESC 
+            LIMIT 10
+        """
+        top_green = get_data_from_sql(top_green_query)
+
+        st.markdown("### 🥇 Top 10 Gainers")
+        st.dataframe(
+             top_green.rename(columns={'Average_Yearly_Return_(%)': 'Return (%)'})
+                .style
+                .format({'Return (%)': '{:.2f}%'})
+                .applymap(lambda x: 'color: #2ecc71' if x > 0 else '', 
+                        subset=['Return (%)'])
+                .set_properties(**{'text-align': 'left'}),
+            use_container_width=True,
+            height=400
+        )
+        
+
+    # Top 10 Loss Stocks
+    with col_bottom:
+        top_loss_query = """
+            SELECT Ticker, `Average_Yearly_Return_(%)` 
+            FROM sector_ticker_wise_yearly_return
+            ORDER BY `Average_Yearly_Return_(%)` ASC 
+            LIMIT 10
+        """
+        top_loss = get_data_from_sql(top_loss_query)
+
+        st.markdown("### 🥈 Top 10 Losers")
+        st.dataframe(
+            top_loss.rename(columns={'Average_Yearly_Return_(%)': 'Return (%)'})
+                .style
+                .format({'Return (%)': '{:.2f}%'})
+                .applymap(lambda x: 'color: #e74c3c' if x < 0 else '', 
+                        subset=['Return (%)'])
+                .set_properties(**{'text-align': 'left'}),
+            use_container_width=True,
+            height=400
+        )
+
+
 
     # Visualization: Volatility Analysis
     st.subheader("📉 Volatility Analysis")
